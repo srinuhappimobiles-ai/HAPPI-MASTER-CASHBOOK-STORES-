@@ -1,0 +1,773 @@
+/* =========================================================
+   GLOBAL RESET
+========================================================= */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  overflow: hidden;
+}
+
+body {
+  font-family:
+    "Segoe UI",
+    Arial,
+    Helvetica,
+    sans-serif;
+
+  background: #eef3f8;
+  color: #263746;
+}
+
+/* Remove Vite default root constraints */
+
+#root {
+  max-width: none !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* =========================================================
+   PAGE
+========================================================= */
+
+.cashbook-page {
+  width: 100%;
+  height: 100vh;
+
+  display: flex;
+  flex-direction: column;
+
+  overflow: hidden;
+
+  background: #ffffff;
+}
+
+/* =========================================================
+   TOP BAR
+========================================================= */
+
+.cashbook-topbar {
+  height: 48px;
+  min-height: 48px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: 0 12px;
+
+  background:
+    linear-gradient(
+      90deg,
+      #ffffff 0%,
+      #f7fbff 100%
+    );
+
+  border-bottom: 1px solid #c7d2dc;
+
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.08);
+
+  z-index: 100;
+}
+
+.brand-box {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+
+  height: 100%;
+}
+
+.brand-icon {
+  width: 30px;
+  height: 30px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 4px;
+
+  background: #1476bd;
+
+  color: #ffffff;
+
+  font-size: 17px;
+  font-weight: 800;
+
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+.brand-title {
+  color: #075da5;
+
+  font-size: 14px;
+  font-weight: 800;
+
+  line-height: 16px;
+}
+
+.brand-subtitle {
+  color: #728494;
+
+  font-size: 9px;
+  font-weight: 600;
+
+  letter-spacing: 0.4px;
+
+  line-height: 11px;
+}
+
+.status-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  height: 30px;
+
+  padding: 0 10px;
+
+  border: 1px solid #d5dee6;
+  border-radius: 4px;
+
+  background: #f8fafc;
+
+  color: #556b7c;
+
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+
+  border-radius: 50%;
+
+  background: #19a566;
+
+  box-shadow:
+    0 0 0 2px rgba(25, 165, 102, 0.12);
+}
+
+/* =========================================================
+   GRID WRAPPER
+========================================================= */
+
+.cashbook-grid-wrap {
+  flex: 1;
+
+  width: 100%;
+  min-width: 0;
+
+  overflow: auto;
+
+  background: #ffffff;
+
+  scrollbar-width: thin;
+}
+
+/* =========================================================
+   TABLE
+========================================================= */
+
+.cashbook-table {
+  width: 100%;
+
+  /*
+    All columns together = 100%.
+
+    Desktop:
+    table fits available screen width.
+
+    Smaller screens:
+    min-width activates horizontal scrolling.
+  */
+
+  min-width: 1500px;
+
+  border-collapse: separate;
+  border-spacing: 0;
+
+  table-layout: fixed;
+
+  background: #ffffff;
+}
+
+/* =========================================================
+   COLUMN WIDTHS
+========================================================= */
+
+.col-sl {
+  width: 3%;
+}
+
+.col-code {
+  width: 4%;
+}
+
+.col-branch {
+  width: 9%;
+}
+
+/*
+  11 number columns
+*/
+.col-number {
+  width: 5.2%;
+}
+
+.col-closing {
+  width: 7%;
+}
+
+.col-remarks {
+  width: 19.8%;
+}
+
+/* =========================================================
+   HEADER
+========================================================= */
+
+.cashbook-table thead th {
+  position: sticky;
+  top: 0;
+
+  height: 43px;
+
+  padding: 4px 5px;
+
+  border-right: 1px solid #bdcad6;
+  border-bottom: 2px solid #9cafbf;
+
+  background:
+    linear-gradient(
+      180deg,
+      #edf4fa 0%,
+      #dce8f2 100%
+    );
+
+  color: #1e3c55;
+
+  font-size: 10.5px;
+  font-weight: 800;
+
+  line-height: 12px;
+
+  text-align: center;
+  vertical-align: middle;
+
+  white-space: normal;
+
+  z-index: 20;
+
+  user-select: none;
+}
+
+/* =========================================================
+   COLOURFUL HEADERS
+========================================================= */
+
+.cashbook-table thead th:nth-child(1),
+.cashbook-table thead th:nth-child(2),
+.cashbook-table thead th:nth-child(3) {
+  background:
+    linear-gradient(
+      180deg,
+      #dceeff 0%,
+      #c8e2f7 100%
+    );
+
+  color: #14527e;
+}
+
+.cashbook-table thead th:nth-child(4),
+.cashbook-table thead th:nth-child(5),
+.cashbook-table thead th:nth-child(6) {
+  background:
+    linear-gradient(
+      180deg,
+      #e1f4ff 0%,
+      #c6e8fa 100%
+    );
+
+  color: #145c7c;
+}
+
+.cashbook-table thead th:nth-child(7),
+.cashbook-table thead th:nth-child(8),
+.cashbook-table thead th:nth-child(9) {
+  background:
+    linear-gradient(
+      180deg,
+      #e5faef 0%,
+      #c9efd9 100%
+    );
+
+  color: #1c6841;
+}
+
+.cashbook-table thead th:nth-child(10),
+.cashbook-table thead th:nth-child(11),
+.cashbook-table thead th:nth-child(12) {
+  background:
+    linear-gradient(
+      180deg,
+      #fff4df 0%,
+      #ffe2b7 100%
+    );
+
+  color: #8a5815;
+}
+
+.cashbook-table thead th:nth-child(13),
+.cashbook-table thead th:nth-child(14) {
+  background:
+    linear-gradient(
+      180deg,
+      #fff0f0 0%,
+      #ffd4d4 100%
+    );
+
+  color: #9b3636;
+}
+
+.cashbook-table thead th:nth-child(15) {
+  background:
+    linear-gradient(
+      180deg,
+      #dcf8e4 0%,
+      #bfeaca 100%
+    );
+
+  color: #176537;
+}
+
+.cashbook-table thead th:nth-child(16) {
+  background:
+    linear-gradient(
+      180deg,
+      #f3e7fc 0%,
+      #e6d1f4 100%
+    );
+
+  color: #6b3b8c;
+}
+
+/* =========================================================
+   BODY
+========================================================= */
+
+.cashbook-table tbody td {
+  height: 35px;
+
+  padding: 2px 3px;
+
+  border-right: 1px solid #d5dee6;
+  border-bottom: 1px solid #d5dee6;
+
+  background: #ffffff;
+
+  color: #263746;
+
+  font-size: 11.5px;
+
+  vertical-align: middle;
+}
+
+/* =========================================================
+   ZEBRA
+========================================================= */
+
+.cashbook-table tbody tr:nth-child(even) td {
+  background: #f8fbfd;
+}
+
+.cashbook-table tbody tr:hover td {
+  background: #eef7ff;
+}
+
+/* =========================================================
+   FIXED FIRST 3 COLUMNS
+========================================================= */
+
+.cashbook-table th:nth-child(1),
+.cashbook-table td:nth-child(1) {
+  position: sticky;
+  left: 0;
+
+  z-index: 10;
+}
+
+.cashbook-table th:nth-child(2),
+.cashbook-table td:nth-child(2) {
+  position: sticky;
+  left: 3%;
+
+  z-index: 10;
+}
+
+.cashbook-table th:nth-child(3),
+.cashbook-table td:nth-child(3) {
+  position: sticky;
+  left: 7%;
+
+  z-index: 10;
+
+  box-shadow:
+    3px 0 5px rgba(40, 67, 88, 0.13);
+}
+
+/* Header fixed cells */
+
+.cashbook-table thead th:nth-child(1),
+.cashbook-table thead th:nth-child(2),
+.cashbook-table thead th:nth-child(3) {
+  z-index: 40;
+}
+
+/* Body fixed background */
+
+.cashbook-table tbody td.fixed-cell {
+  background: #f7fbff;
+}
+
+/* =========================================================
+   SL
+========================================================= */
+
+.sl-cell {
+  text-align: center;
+
+  color: #607587 !important;
+
+  font-weight: 700;
+}
+
+/* =========================================================
+   CODE
+========================================================= */
+
+.code-cell {
+  text-align: center;
+
+  color: #1265a1 !important;
+
+  font-weight: 700;
+
+  white-space: nowrap;
+}
+
+/* =========================================================
+   BRANCH
+========================================================= */
+
+.branch-cell {
+  padding-left: 6px !important;
+
+  color: #314b5f !important;
+
+  font-weight: 700;
+
+  text-align: left;
+
+  white-space: nowrap;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* =========================================================
+   AMOUNT INPUT
+========================================================= */
+
+.amount-cell {
+  padding: 2px 3px !important;
+}
+
+.amount-cell input {
+  display: block;
+
+  width: 100%;
+  height: 29px;
+
+  margin: 0;
+  padding: 3px 6px;
+
+  border: 1px solid #bcc9d4;
+  border-radius: 2px;
+
+  outline: none;
+
+  background: #ffffff;
+
+  color: #172b3a;
+
+  font-size: 11.5px;
+  font-weight: 500;
+
+  text-align: right;
+
+  /*
+    Important for speed:
+    no transition animation on every keystroke.
+  */
+
+  transition:
+    border-color 0.04s linear,
+    box-shadow 0.04s linear,
+    background 0.04s linear;
+}
+
+.amount-cell input:hover {
+  border-color: #8ea4b5;
+}
+
+.amount-cell input:focus {
+  border-color: #1680c9;
+
+  background: #f4faff;
+
+  box-shadow:
+    0 0 0 1px #1680c9;
+}
+
+/* =========================================================
+   NO NUMBER SPINNERS
+========================================================= */
+
+.amount-cell input::-webkit-inner-spin-button,
+.amount-cell input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.amount-cell input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* =========================================================
+   CLOSING BALANCE
+========================================================= */
+
+.closing-cell {
+  padding: 2px 3px !important;
+
+  background: #eefaf1 !important;
+
+  border-left: 1px solid #9fc6aa !important;
+
+  color: #166534 !important;
+
+  font-weight: 800;
+
+  text-align: right;
+}
+
+.closing-value {
+  display: block;
+
+  width: 100%;
+  height: 29px;
+
+  padding: 6px;
+
+  border-radius: 2px;
+
+  white-space: nowrap;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.closing-value:not(:empty) {
+  background: #e2f5e6;
+
+  box-shadow:
+    inset 0 0 0 1px
+    rgba(38, 117, 57, 0.1);
+}
+
+.closing-value.negative {
+  background: #ffeaea;
+
+  color: #c62828;
+}
+
+/* =========================================================
+   REMARKS
+========================================================= */
+
+.remarks-cell {
+  padding: 2px 3px !important;
+}
+
+.remarks-input {
+  display: block;
+
+  width: 100%;
+  height: 29px;
+
+  padding: 3px 6px;
+
+  border: 1px solid #bcc9d4;
+  border-radius: 2px;
+
+  outline: none;
+
+  background: #ffffff;
+
+  color: #263746;
+
+  font-size: 11.5px;
+}
+
+.remarks-input:focus {
+  border-color: #8a42c1;
+
+  background: #fcf7ff;
+
+  box-shadow:
+    0 0 0 1px #8a42c1;
+}
+
+/* =========================================================
+   SCROLLBAR
+========================================================= */
+
+.cashbook-grid-wrap::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+.cashbook-grid-wrap::-webkit-scrollbar-track {
+  background: #edf2f6;
+}
+
+.cashbook-grid-wrap::-webkit-scrollbar-thumb {
+  background: #9cacbb;
+
+  border-radius: 5px;
+}
+
+.cashbook-grid-wrap::-webkit-scrollbar-thumb:hover {
+  background: #7d91a3;
+}
+
+/* =========================================================
+   RESPONSIVE
+========================================================= */
+
+@media (max-width: 1400px) {
+  .cashbook-table {
+    min-width: 1500px;
+  }
+
+  .cashbook-table thead th {
+    font-size: 10px;
+  }
+
+  .cashbook-table tbody td {
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 800px) {
+  .cashbook-table {
+    min-width: 1500px;
+  }
+
+  .brand-title {
+    font-size: 13px;
+  }
+
+  .status-box {
+    display: none;
+  }
+}
+/* =========================================================
+   CASHBOOK ACTIONS
+========================================================= */
+
+.cashbook-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.save-button {
+  height: 30px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 6px;
+
+  padding: 0 12px;
+
+  border: 1px solid #0d70b5;
+  border-radius: 4px;
+
+  background:
+    linear-gradient(
+      180deg,
+      #1687d0 0%,
+      #0867ad 100%
+    );
+
+  color: #ffffff;
+
+  font-size: 11px;
+  font-weight: 700;
+
+  cursor: pointer;
+
+  box-shadow:
+    0 1px 2px
+    rgba(0, 0, 0, 0.12);
+}
+
+.save-button:hover {
+  background:
+    linear-gradient(
+      180deg,
+      #2495dc 0%,
+      #0871bb 100%
+    );
+}
+
+.save-button:active {
+  transform: translateY(1px);
+}
+
+.save-icon {
+  font-size: 12px;
+}
+
+/* Unsaved status */
+
+.status-dot.unsaved {
+  background: #e59b20;
+
+  box-shadow:
+    0 0 0 2px
+    rgba(229, 155, 32, 0.14);
+}
