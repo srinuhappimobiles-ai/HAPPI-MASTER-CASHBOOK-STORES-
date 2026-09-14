@@ -170,6 +170,52 @@ function databaseRowToWebsiteRow(dbRow, index, fallbackBranch) {
   };
 }
 
+
+/* -----------------------------------------
+   STORE MASTER HELPERS
+
+   The live Supabase master_cashbook table is the
+   source of truth for the store list. New stores are
+   inserted there and deleted from there, so the store
+   list remains shared across devices.
+----------------------------------------- */
+
+function sortAndRenumberRows(inputRows) {
+  return [...inputRows]
+    .sort((a, b) =>
+      String(a?.branch || '').localeCompare(
+        String(b?.branch || ''),
+        'en',
+        { sensitivity: 'base' }
+      )
+    )
+    .map((row, index) => ({
+      ...row,
+      slNo: index + 1,
+    }));
+}
+
+function createEmptyStoreRow(code, branch) {
+  return {
+    slNo: 0,
+    code,
+    branch,
+    opening: '',
+    deposit: '',
+    denomination: '',
+    addings: '',
+    pendingApprovals: '',
+    finance: '',
+    sr: '',
+    sweeperSalary: '',
+    edits: '',
+    apxShortage: '',
+    kspApprovals: '',
+    remarks: '',
+    databaseId: null,
+  };
+}
+
 /* -----------------------------------------
    FORMULA / AMOUNT CALCULATOR
 
@@ -809,6 +855,35 @@ const errorRowStyle = {
   color: '#4a2020',
 };
 
+const storeModalStyle = {
+  width: 'min(460px, 94vw)',
+  maxHeight: '82vh',
+  background: '#ffffff',
+  borderRadius: '8px',
+  border: '1px solid #b9c5cf',
+  boxShadow: '0 10px 35px rgba(0,0,0,0.22)',
+  overflow: 'hidden',
+  display: 'flex',
+  flexDirection: 'column',
+};
+
+const storeInputStyle = {
+  width: '100%',
+  height: '36px',
+  boxSizing: 'border-box',
+  padding: '6px 9px',
+  border: '1px solid #b7c4cf',
+  borderRadius: '5px',
+  outline: 'none',
+  fontSize: '12px',
+  background: '#ffffff',
+};
+
+const storeSelectStyle = {
+  ...storeInputStyle,
+  cursor: 'pointer',
+};
+
 const simpleListModalStyle = {
   width: 'min(430px, 94vw)',
   maxHeight: '78vh',
@@ -970,9 +1045,18 @@ export default function CashbookGrid() {
 
   const [editsOpen, setEditsOpen] = useState(false);
   const [pendingApprovalsOpen, setPendingApprovalsOpen] = useState(false);
+  const [importedApprovalKeys, setImportedApprovalKeys] = useState(() => new Set());
   const [pendingStatusOpen, setPendingStatusOpen] = useState(false);
   const [lowCashOpen, setLowCashOpen] = useState(false);
   const [lowCashRows, setLowCashRows] = useState([]);
+
+  // Store management
+  const [addStoreOpen, setAddStoreOpen] = useState(false);
+  const [deleteStoreOpen, setDeleteStoreOpen] = useState(false);
+  const [newStoreCode, setNewStoreCode] = useState('');
+  const [newStoreName, setNewStoreName] = useState('');
+  const [deleteStoreCode, setDeleteStoreCode] = useState('');
+  const [storeActionLoading, setStoreActionLoading] = useState(false);
   const [uploadErrors, setUploadErrors] = useState([]);
   const [uploadErrorTitle, setUploadErrorTitle] = useState('Upload Errors');
   const [uploadErrorOpen, setUploadErrorOpen] = useState(false);
@@ -1165,6 +1249,48 @@ export default function CashbookGrid() {
   }, [rows]);
 
   /* -----------------------------------------
+     APEX PAYMENT BRIDGE
+
+     Pending Approval checkboxes create a shared
+     Supabase transfer record. APEX PAYMENT reads
+     those records and creates the payment row.
+  ----------------------------------------- */
+
+  const loadImportedApprovalKeys = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('apex_pending_transfers')
+        .select('approval_key');
+
+      if (error) {
+        console.warn('APEX bridge key load failed:', error);
+        return;
+      }
+
+      const keys = new Set(
+        (data || [])
+          .map((item) => String(item?.approval_key || '').trim())
+          .filter(Boolean)
+      );
+
+      setImportedApprovalKeys(keys);
+    } catch (error) {
+      console.warn('APEX bridge key load error:', error);
+    }
+  };
+
+  useEffect(() => {
+    loadImportedApprovalKeys();
+
+    const timer = window.setInterval(
+      loadImportedApprovalKeys,
+      5000
+    );
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  /* -----------------------------------------
      LOAD SUPABASE DATA
   ----------------------------------------- */
 
@@ -1207,48 +1333,28 @@ export default function CashbookGrid() {
 
         const localMap = getSavedData();
 
-        const finalRows = DEFAULT_BRANCHES.map(
-          (branch, index) => {
-            const cloudRow = cloudMap[branch.CODE];
+        let finalRows;
 
-            if (cloudRow) {
-              return databaseRowToWebsiteRow(
-                cloudRow,
+        if (Array.isArray(data) && data.length > 0) {
+          // Every row in master_cashbook represents an active store.
+          // This allows Add New Store / Delete Store to persist across
+          // refreshes and across devices.
+          finalRows = sortAndRenumberRows(
+            data.map((dbRow, index) =>
+              databaseRowToWebsiteRow(
+                dbRow,
                 index,
-                branch
-              );
-            }
-
-            const localRow = localMap[branch.CODE];
-
-            return {
-              slNo: index + 1,
-              code: branch.CODE,
-              branch: branch.BRANCH,
-
-              opening: localRow?.opening ?? '',
-              deposit: localRow?.deposit ?? '',
-              denomination:
-                localRow?.denomination ?? '',
-              addings: localRow?.addings ?? '',
-              pendingApprovals:
-                localRow?.pendingApprovals ?? '',
-              finance: localRow?.finance ?? '',
-              sr: localRow?.sr ?? '',
-              sweeperSalary:
-                localRow?.sweeperSalary ?? '',
-              edits: localRow?.edits ?? '',
-              apxShortage:
-                localRow?.apxShortage ?? '',
-              kspApprovals:
-                localRow?.kspApprovals ?? '',
-
-              remarks: localRow?.remarks ?? '',
-
-              databaseId: null,
-            };
-          }
-        );
+                {
+                  CODE: dbRow?.code || '',
+                  BRANCH: dbRow?.branch || '',
+                }
+              )
+            )
+          );
+        } else {
+          // Safe first-run/offline fallback to the original 107-store master.
+          finalRows = createRows(localMap);
+        }
 
         setRows(finalRows);
 
@@ -1479,7 +1585,7 @@ export default function CashbookGrid() {
     label
   ) => {
     const confirmed = window.confirm(
-      `Are you sure you want to clear all ${label}?\n\nAll 107 branches will be cleared. The values will become blank, not 0.`
+      `Are you sure you want to clear all ${label}?\n\nAll stores currently in the Master Cashbook will be cleared. The values will become blank, not 0.`
     );
 
     if (!confirmed) return;
@@ -1737,7 +1843,7 @@ export default function CashbookGrid() {
               )
             );
 
-          // Ignore branches/stores that are not in our 107-branch master.
+          // Ignore branches/stores that are not currently in the Master Cashbook.
           if (!code) {
             return;
           }
@@ -2525,45 +2631,40 @@ export default function CashbookGrid() {
   //
   // The store-count on the button remains a store count, not a
   // component-row count.
+  const makeApprovalKey = (code, componentIndex, amount) =>
+    `${String(code || '').trim().toUpperCase()}::${componentIndex}::${amount}`;
+
   const buildPendingApprovalList = () => {
     const output = [];
 
     rowsRef.current.forEach((row) => {
-      const raw =
-        String(
-          row.pendingApprovals ?? ''
-        ).trim();
-
+      const raw = String(row.pendingApprovals ?? '').trim();
       if (!raw) return;
 
-      const calculated =
-        calculateAmount(raw);
-
+      const calculated = calculateAmount(raw);
       if (calculated === 0) return;
 
-      const expression =
-        raw.replace(/^=/, '').trim();
-
-      // Pending Approvals formulas are additive, e.g. =1000+300+500.
-      // Split the original expression into its individual voucher amounts.
-      const parts =
-        expression
-          .split('+')
-          .map((part) => part.trim())
-          .filter(Boolean);
+      const expression = raw.replace(/^=/, '').trim();
+      const parts = expression
+        .split('+')
+        .map((part) => part.trim())
+        .filter(Boolean);
 
       if (parts.length > 1) {
-        parts.forEach((part) => {
-          const value = Number(part);
+        parts.forEach((part, componentIndex) => {
+          const value = calculateAmount(part);
 
-          if (
-            Number.isFinite(value) &&
-            value !== 0
-          ) {
+          if (Number.isFinite(value) && value !== 0) {
             output.push({
               code: row.code,
               branch: row.branch,
               amount: value,
+              componentIndex,
+              approvalKey: makeApprovalKey(
+                row.code,
+                componentIndex,
+                value
+              ),
             });
           }
         });
@@ -2571,15 +2672,100 @@ export default function CashbookGrid() {
         return;
       }
 
-      // Single value / non-formula value.
       output.push({
         code: row.code,
         branch: row.branch,
         amount: calculated,
+        componentIndex: 0,
+        approvalKey: makeApprovalKey(
+          row.code,
+          0,
+          calculated
+        ),
       });
     });
 
     return output;
+  };
+
+  const sendPendingApprovalToApex = async (item) => {
+    if (!item?.approvalKey) return;
+
+    if (importedApprovalKeys.has(item.approvalKey)) {
+      return;
+    }
+
+    const payload = {
+      approval_key: item.approvalKey,
+      branch_code: item.code,
+      branch_name: item.branch,
+      amount: Number(item.amount),
+      status: 'pending',
+    };
+
+    try {
+      const { error } = await supabase
+        .from('apex_pending_transfers')
+        .insert(payload);
+
+      if (error && error.code !== '23505') {
+        console.error('APEX bridge insert failed:', error);
+        notify(
+          'APEX Payment connection failed. Supabase bridge table check cheyyandi.',
+          true
+        );
+        return;
+      }
+
+      setImportedApprovalKeys((previous) => {
+        const next = new Set(previous);
+        next.add(item.approvalKey);
+        return next;
+      });
+
+      notify(
+        `${item.code} ₹${formatAmount(item.amount)} APEX Payment ki pampincham.`
+      );
+    } catch (error) {
+      console.error('APEX bridge insert error:', error);
+      notify(
+        'APEX Payment bridge error.',
+        true
+      );
+    }
+  };
+
+  const removePendingApprovalFromApex = async (item) => {
+    if (!item?.approvalKey) return;
+
+    try {
+      const { error } = await supabase
+        .from('apex_pending_transfers')
+        .delete()
+        .eq('approval_key', item.approvalKey);
+
+      if (error) {
+        console.error('APEX bridge delete failed:', error);
+        notify(
+          'APEX Payment remove failed. Supabase delete policy check cheyyandi.',
+          true
+        );
+        return;
+      }
+
+      setImportedApprovalKeys((previous) => {
+        const next = new Set(previous);
+        next.delete(item.approvalKey);
+        return next;
+      });
+
+      notify(
+        `${item.code} ₹${formatAmount(item.amount)} APEX Payment nundi remove chestunnam.`
+      );
+    } catch (error) {
+      console.error('APEX bridge delete error:', error);
+      notify('APEX Payment remove bridge error.', true);
+    }
   };
 
   const getReportStoreCount = (field) =>
@@ -4097,11 +4283,168 @@ export default function CashbookGrid() {
     }
   };
 
+  const openAddStore = () => {
+    setNewStoreCode('');
+    setNewStoreName('');
+    setAddStoreOpen(true);
+  };
+
+  const openDeleteStore = () => {
+    setDeleteStoreCode('');
+    setDeleteStoreOpen(true);
+  };
+
+  const addNewStore = async () => {
+    const code = newStoreCode.trim().toUpperCase();
+    const branch = newStoreName.trim().toUpperCase();
+
+    if (!code || !branch) {
+      window.alert('Please enter both Store Short Code and Store Name.');
+      return;
+    }
+
+    const duplicateCode = rowsRef.current.some(
+      (row) => String(row.code || '').trim().toUpperCase() === code
+    );
+
+    const duplicateBranch = rowsRef.current.some(
+      (row) => String(row.branch || '').trim().toUpperCase() === branch
+    );
+
+    if (duplicateCode) {
+      window.alert(`Store Code ${code} already exists.`);
+      return;
+    }
+
+    if (duplicateBranch) {
+      window.alert(`Store ${branch} already exists.`);
+      return;
+    }
+
+    const emptyRow = createEmptyStoreRow(code, branch);
+
+    setStoreActionLoading(true);
+    setSaveStatus('Adding new store...');
+
+    try {
+      const payload = websiteRowToDatabaseRow(emptyRow);
+
+      const { data, error } = await supabase
+        .from('master_cashbook')
+        .insert(payload)
+        .select('*')
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      const addedRow = databaseRowToWebsiteRow(
+        data,
+        0,
+        { CODE: code, BRANCH: branch }
+      );
+
+      databaseRowsRef.current[code] = data;
+
+      const nextRows = sortAndRenumberRows([
+        ...rowsRef.current,
+        addedRow,
+      ]);
+
+      rowsRef.current = nextRows;
+      setRows(nextRows);
+      persistRowsLocally(nextRows, []);
+
+      setAddStoreOpen(false);
+      setNewStoreCode('');
+      setNewStoreName('');
+      setSaveStatus(`Store Added ✓ • ${nextRows.length} stores`);
+    } catch (error) {
+      console.error('Add new store error:', error);
+      window.alert(
+        `Store could not be added.\n\n${error?.message || 'Supabase error'}`
+      );
+      setSaveStatus('Cloud Failed');
+    } finally {
+      setStoreActionLoading(false);
+    }
+  };
+
+  const deleteStore = async () => {
+    const code = String(deleteStoreCode || '').trim();
+    const row = rowsRef.current.find(
+      (item) => item.code === code
+    );
+
+    if (!row) {
+      window.alert('Please select a store to delete.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete ${row.branch} (${row.code})?\n\nThis will permanently delete the store row and all data currently stored in its Master Cashbook cells.`
+    );
+
+    if (!confirmed) return;
+
+    setStoreActionLoading(true);
+    setSaveStatus('Deleting store...');
+
+    try {
+      const { error } = await supabase
+        .from('master_cashbook')
+        .delete()
+        .eq('code', row.code);
+
+      if (error) {
+        throw error;
+      }
+
+      // Also remove any pending APEX bridge approvals belonging to this store.
+      // This cleanup is intentionally best-effort; the store deletion itself
+      // has already succeeded if the request above completed.
+      try {
+        await supabase
+          .from('apex_pending_transfers')
+          .delete()
+          .eq('branch_code', row.code);
+      } catch (bridgeError) {
+        console.warn('APEX bridge cleanup skipped:', bridgeError);
+      }
+
+      delete databaseRowsRef.current[row.code];
+      dirtyCodesRef.current.delete(row.code);
+
+      const nextRows = sortAndRenumberRows(
+        rowsRef.current.filter(
+          (item) => item.code !== row.code
+        )
+      );
+
+      rowsRef.current = nextRows;
+      setRows(nextRows);
+      persistRowsLocally(nextRows, []);
+
+      setDeleteStoreCode('');
+      setDeleteStoreOpen(false);
+      setSaveStatus(`Store Deleted ✓ • ${nextRows.length} stores`);
+    } catch (error) {
+      console.error('Delete store error:', error);
+      window.alert(
+        `Store could not be deleted.\n\n${error?.message || 'Supabase error'}`
+      );
+      setSaveStatus('Cloud Failed');
+    } finally {
+      setStoreActionLoading(false);
+    }
+  };
+
   const visibleRows =
     cashierFilter === 'cashier1'
       ? rows.slice(0, 54)
       : cashierFilter === 'cashier2'
-        ? rows.slice(54, 107)
+        ? rows.slice(54)
         : rows;
 
   /* -----------------------------------------
@@ -4261,11 +4604,27 @@ export default function CashbookGrid() {
               cursor: 'pointer',
             }}
           >
-            <option value="all">All Stores (107)</option>
-            <option value="cashier1">Cashier 1 (54)</option>
-            <option value="cashier2">Cashier 2 (53)</option>
+            <option value="all">All Stores ({rows.length})</option>
+            <option value="cashier1">Cashier 1 ({Math.min(54, rows.length)})</option>
+            <option value="cashier2">Cashier 2 ({Math.max(rows.length - 54, 0)})</option>
           </select>
         </div>
+
+        <button
+          type="button"
+          onClick={openAddStore}
+          style={featureButtonStyle('#0f766e')}
+        >
+          ➕ Add New Store
+        </button>
+
+        <button
+          type="button"
+          onClick={openDeleteStore}
+          style={featureButtonStyle('#b91c1c')}
+        >
+          🗑 Delete Store
+        </button>
 
         <button
           type="button"
@@ -4881,7 +5240,15 @@ export default function CashbookGrid() {
 
                     <input
                       type="checkbox"
-                      aria-label={`Mark ${item.branch} ₹${formatAmount(item.amount)}`}
+                      checked={importedApprovalKeys.has(item.approvalKey)}
+                      onChange={(event) => {
+                        if (event.target.checked) {
+                          sendPendingApprovalToApex(item);
+                        } else {
+                          removePendingApprovalFromApex(item);
+                        }
+                      }}
+                      aria-label={`${importedApprovalKeys.has(item.approvalKey) ? 'Remove' : 'Send'} ${item.branch} ₹${formatAmount(item.amount)} ${importedApprovalKeys.has(item.approvalKey) ? 'from' : 'to'} APEX Payment`}
                       style={{
                         width: '17px',
                         height: '17px',
@@ -4941,6 +5308,150 @@ export default function CashbookGrid() {
                   <div style={reportAmountStyle}>₹{formatAmount(item.amount)}</div>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADD NEW STORE MODAL */}
+
+      {addStoreOpen && (
+        <div style={modalOverlayStyle}>
+          <div style={storeModalStyle}>
+            <div style={modalHeaderStyle}>
+              <strong style={{ color: '#263746', fontSize: '14px' }}>
+                ➕ Add New Store
+              </strong>
+              <button
+                type="button"
+                onClick={() => setAddStoreOpen(false)}
+                style={closeButtonStyle}
+                disabled={storeActionLoading}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ padding: '14px' }}>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '11px', fontWeight: 800, color: '#334155' }}>
+                Store Short Code
+              </label>
+              <input
+                type="text"
+                value={newStoreCode}
+                onChange={(event) => setNewStoreCode(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') addNewStore();
+                }}
+                placeholder="Example: ABCD"
+                maxLength={20}
+                autoFocus
+                style={storeInputStyle}
+                disabled={storeActionLoading}
+              />
+
+              <label style={{ display: 'block', margin: '13px 0 6px', fontSize: '11px', fontWeight: 800, color: '#334155' }}>
+                Store Name
+              </label>
+              <input
+                type="text"
+                value={newStoreName}
+                onChange={(event) => setNewStoreName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') addNewStore();
+                }}
+                placeholder="Example: HYDERABAD CENTRAL"
+                maxLength={100}
+                style={storeInputStyle}
+                disabled={storeActionLoading}
+              />
+
+              <div style={{ marginTop: '10px', fontSize: '10px', color: '#64748b', lineHeight: 1.5 }}>
+                New store will be inserted in alphabetical order. All Master Cashbook cells will be created blank, with Closing Balance calculated from the blank amount fields.
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '7px', marginTop: '15px' }}>
+                <button
+                  type="button"
+                  onClick={() => setAddStoreOpen(false)}
+                  style={financeCloseActionStyle}
+                  disabled={storeActionLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={addNewStore}
+                  style={financeActionButtonStyle('#0f766e')}
+                  disabled={storeActionLoading}
+                >
+                  {storeActionLoading ? 'Adding...' : 'Add Store'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE STORE MODAL */}
+
+      {deleteStoreOpen && (
+        <div style={modalOverlayStyle}>
+          <div style={storeModalStyle}>
+            <div style={modalHeaderStyle}>
+              <strong style={{ color: '#263746', fontSize: '14px' }}>
+                🗑 Delete Store
+              </strong>
+              <button
+                type="button"
+                onClick={() => setDeleteStoreOpen(false)}
+                style={closeButtonStyle}
+                disabled={storeActionLoading}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ padding: '14px' }}>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '11px', fontWeight: 800, color: '#334155' }}>
+                Select Store
+              </label>
+              <select
+                value={deleteStoreCode}
+                onChange={(event) => setDeleteStoreCode(event.target.value)}
+                style={storeSelectStyle}
+                disabled={storeActionLoading}
+              >
+                <option value="">Select Store to Delete</option>
+                {rows.map((row) => (
+                  <option key={row.code} value={row.code}>
+                    {row.branch} ({row.code})
+                  </option>
+                ))}
+              </select>
+
+              <div style={{ marginTop: '10px', padding: '9px', border: '1px solid #fecaca', borderRadius: '5px', background: '#fff7f7', color: '#991b1b', fontSize: '10px', lineHeight: 1.5 }}>
+                ⚠ Deleting a store permanently removes its Master Cashbook row and all data in that row from the cloud database.
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '7px', marginTop: '15px' }}>
+                <button
+                  type="button"
+                  onClick={() => setDeleteStoreOpen(false)}
+                  style={financeCloseActionStyle}
+                  disabled={storeActionLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={deleteStore}
+                  style={financeActionButtonStyle('#b91c1c')}
+                  disabled={storeActionLoading || !deleteStoreCode}
+                >
+                  {storeActionLoading ? 'Deleting...' : 'Delete Store'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
