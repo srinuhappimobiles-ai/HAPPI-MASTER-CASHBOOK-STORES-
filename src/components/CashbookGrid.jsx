@@ -2879,41 +2879,98 @@ export default function CashbookGrid() {
   };
 
   const getLowCashDefaultRemark = (row) => {
-    const amount = calculateAmount(
-      row.denomination
-    );
+    const denominationValue =
+      String(row.denomination ?? '').trim();
 
-    if (amount <= 0) {
+    const depositValue =
+      String(row.deposit ?? '').trim();
+
+    const denominationIsBlank =
+      denominationValue === '';
+
+    const denominationAmount =
+      calculateAmount(row.denomination);
+
+    const depositIsBlankOrZero =
+      depositValue === '' ||
+      calculateAmount(row.deposit) === 0;
+
+    // Rule 1:
+    // Denomination blank/0 is No Cash ONLY when Deposit is blank/0.
+    // If Deposit has an amount, it is not a No Cash case.
+    if (
+      (denominationIsBlank || denominationAmount === 0) &&
+      depositIsBlankOrZero
+    ) {
       return 'No Cash';
     }
 
-    if (amount >= 1 && amount <= 500) {
+    // Rule 2: ₹1–₹500 = Low Cash
+    if (
+      denominationAmount >= 1 &&
+      denominationAmount <= 500
+    ) {
       return 'Low Cash';
     }
 
+    // Rule 3: ₹501+ = blank editable remarks.
+    // Also leave blank/0 with a deposited amount without a default remark.
     return '';
   };
 
   const buildLowCashRows = () => {
     const stored = getLowCashStorageMap();
 
-    const reportRows = rowsRef.current.map((row) => {
-      const denomination =
-        calculateAmount(row.denomination);
+    const reportRows = rowsRef.current
+      .filter((row) => {
+        const denominationValue =
+          String(row.denomination ?? '').trim();
 
-      const defaultRemark =
-        getLowCashDefaultRemark(row);
+        const denominationAmount =
+          calculateAmount(row.denomination);
 
-      return {
-        code: row.code,
-        branch: row.branch,
-        denomination,
-        status:
-          stored[row.code] !== undefined
-            ? stored[row.code]
-            : defaultRemark,
-      };
-    });
+        const depositValue =
+          String(row.deposit ?? '').trim();
+
+        const depositAmount =
+          calculateAmount(row.deposit);
+
+        const denominationIsBlankOrZero =
+          denominationValue === '' ||
+          denominationAmount === 0;
+
+        const depositHasAmount =
+          depositValue !== '' &&
+          depositAmount > 0;
+
+        // If denomination is blank/0 and the cash was deposited,
+        // this is not a Low/No Cash case, so do not show it.
+        if (
+          denominationIsBlankOrZero &&
+          depositHasAmount
+        ) {
+          return false;
+        }
+
+        return true;
+      })
+      .map((row) => {
+        const denomination =
+          calculateAmount(row.denomination);
+
+        const defaultRemark =
+          getLowCashDefaultRemark(row);
+
+        return {
+          code: row.code,
+          branch: row.branch,
+          denomination,
+          status:
+            stored[row.code] !== undefined
+              ? stored[row.code]
+              : defaultRemark,
+        };
+      });
 
     // Sorting:
     // 1) No Cash (blank / 0) first
@@ -5539,7 +5596,7 @@ export default function CashbookGrid() {
             </div>
 
             <div style={{ padding: '7px 10px', fontSize: '11px', color: '#5f6f7d', borderBottom: '1px solid #d9e1e8' }}>
-              Blank / 0 = No Cash • ₹1–₹500 = Low Cash • ₹501+ = blank editable remarks.
+              Denomination blank / 0 + Deposit blank / 0 = No Cash • ₹1–₹500 = Low Cash • ₹501+ = blank editable remarks.
             </div>
 
             <div style={{ overflow: 'auto', padding: '8px 10px 12px' }}>
