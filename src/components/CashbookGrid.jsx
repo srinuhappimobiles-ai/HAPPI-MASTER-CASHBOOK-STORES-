@@ -2749,6 +2749,65 @@ export default function CashbookGrid() {
     return output;
   };
 
+  const makeCompactApexReference = (
+    rows,
+    currentIndex,
+    currentRow
+  ) => {
+    if (
+      !currentRow?.branchCode ||
+      !currentRow?.voucherDate ||
+      currentRow?.amount === '' ||
+      currentRow?.amount === null ||
+      currentRow?.amount === undefined
+    ) {
+      return '';
+    }
+
+    const branch = String(currentRow.branchCode)
+      .trim()
+      .toUpperCase();
+
+    const currentMonth = String(currentRow.voucherDate).substring(0, 7);
+
+    let paymentCount = 0;
+
+    rows.forEach((row, index) => {
+      if (index >= currentIndex) return;
+
+      const sameBranch =
+        String(row.branchCode ?? '')
+          .trim()
+          .toUpperCase() === branch;
+
+      const sameMonth =
+        row.voucherDate &&
+        String(row.voucherDate).substring(0, 7) === currentMonth;
+
+      const hasAmount =
+        row.amount !== '' &&
+        row.amount !== null &&
+        row.amount !== undefined;
+
+      if (sameBranch && sameMonth && hasAmount) {
+        paymentCount += 1;
+      }
+    });
+
+    const paymentNumber = String(paymentCount + 1).padStart(2, '0');
+
+    return (
+      'PAYMENT/' +
+      branch +
+      '/' +
+      String(currentRow.voucherDate).replace(/-/g, '') +
+      '/' +
+      paymentNumber +
+      '/' +
+      currentRow.amount
+    );
+  };
+
   const createCompactApexRow = (item) => {
     const today = getLocalDateString();
 
@@ -2766,10 +2825,10 @@ export default function CashbookGrid() {
       narration: COMPACT_APEX_DEFAULT_NARRATION,
       branchCode: item.code,
       referenceNo: '',
-      referenceDate: '',
+      referenceDate: today,
       salesperson: '',
       productCategory: '',
-      depositedDate: '',
+      depositedDate: today,
       payeeName: '',
     };
   };
@@ -2782,9 +2841,21 @@ export default function CashbookGrid() {
         (row) => row.approvalKey === item.approvalKey
       );
 
-      return exists
-        ? current
-        : [...current, createCompactApexRow(item)];
+      if (exists) return current;
+
+      const next = [
+        ...current,
+        createCompactApexRow(item),
+      ];
+
+      return next.map((row, index) => ({
+        ...row,
+        referenceNo: makeCompactApexReference(
+          next,
+          index,
+          row
+        ),
+      }));
     });
 
     setApexDownloadStatus('');
@@ -2793,13 +2864,37 @@ export default function CashbookGrid() {
   };
 
   const updateCompactApexRow = (approvalKey, field, value) => {
-    setApexCompactRows((current) =>
-      current.map((row) =>
+    setApexCompactRows((current) => {
+      const changed = current.map((row) =>
         row.approvalKey === approvalKey
           ? { ...row, [field]: value }
           : row
-      )
-    );
+      );
+
+      if (field !== 'voucherDate') {
+        return changed;
+      }
+
+      return changed.map((row, index) => {
+        if (row.approvalKey === approvalKey) {
+          row = {
+            ...row,
+            txnNo: String(value ?? '').replace(/-/g, ''),
+            referenceDate: value,
+            depositedDate: value,
+          };
+        }
+
+        return {
+          ...row,
+          referenceNo: makeCompactApexReference(
+            changed,
+            index,
+            row
+          ),
+        };
+      });
+    });
 
     setApexDownloadStatus('');
   };
@@ -6030,7 +6125,7 @@ export default function CashbookGrid() {
               <table
                 style={{
                   width: '100%',
-                  minWidth: '1280px',
+                  minWidth: '1400px',
                   borderCollapse: 'collapse',
                   fontSize: '10px',
                   color: '#263746',
@@ -6039,6 +6134,7 @@ export default function CashbookGrid() {
                 <thead>
                   <tr>
                     {[
+                      'Voucher Date',
                       'Store',
                       'Amount',
                       'Party Name',
@@ -6081,6 +6177,33 @@ export default function CashbookGrid() {
                 <tbody>
                   {apexCompactRows.map((row) => (
                     <tr key={row.approvalKey}>
+                      <td
+                        style={{
+                          padding: '4px',
+                          border: '1px solid #d7e0e8',
+                        }}
+                      >
+                        <input
+                          type="date"
+                          value={row.voucherDate}
+                          onChange={(event) =>
+                            updateCompactApexRow(
+                              row.approvalKey,
+                              'voucherDate',
+                              event.target.value
+                            )
+                          }
+                          style={{
+                            width: '125px',
+                            height: '27px',
+                            boxSizing: 'border-box',
+                            border: '1px solid #b7c4cf',
+                            borderRadius: '3px',
+                            fontSize: '10px',
+                          }}
+                        />
+                      </td>
+
                       <td
                         style={{
                           padding: '5px',
