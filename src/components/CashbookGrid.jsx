@@ -77,6 +77,35 @@ const NUMBER_FIELDS = [
 ];
 
 /* -----------------------------------------
+   COMPACT APEX PAYMENT
+----------------------------------------- */
+
+const COMPACT_APEX_PARTIES = [
+  'Staff Welfare Exp',
+  'Pooja Exps',
+  'Travelling Expenses (STN)',
+  'House Keeping Expenses',
+  'Store Maintenance',
+  'DONATIONS A/c',
+  'Sales Promotion A/c.',
+  'PROJECT AND RE EXPENSES',
+  'Travelling & Accomodation Exps',
+  'Royalties',
+];
+
+const COMPACT_APEX_PAYMENT_MODES = [
+  'CASH',
+  'CHEQ',
+  'RTGS',
+  'NEFT',
+  'IMPS',
+  'INFT',
+];
+
+const COMPACT_APEX_DEFAULT_NARRATION =
+  'Being Entry Passing towards Approved by';
+
+/* -----------------------------------------
    LOCAL STORAGE
 ----------------------------------------- */
 
@@ -1046,7 +1075,39 @@ export default function CashbookGrid() {
   const [editsOpen, setEditsOpen] = useState(false);
   const [pendingApprovalsOpen, setPendingApprovalsOpen] = useState(false);
   const [importedApprovalKeys, setImportedApprovalKeys] = useState(() => new Set());
+  const [apexCompactOpen, setApexCompactOpen] = useState(false);
+  const [apexCompactRows, setApexCompactRows] = useState([]);
+  const [apexNarrationKey, setApexNarrationKey] = useState(null);
+  const [apexDownloadStatus, setApexDownloadStatus] = useState('');
   const [pendingStatusOpen, setPendingStatusOpen] = useState(false);
+
+  useEffect(() => {
+    const handleCompactApexEscape = (event) => {
+      if (event.key !== 'Escape') return;
+
+      if (apexNarrationKey !== null) {
+        event.preventDefault();
+        setApexNarrationKey(null);
+        return;
+      }
+
+      if (apexCompactOpen) {
+        event.preventDefault();
+        setApexCompactOpen(false);
+      }
+    };
+
+    window.addEventListener(
+      'keydown',
+      handleCompactApexEscape
+    );
+
+    return () =>
+      window.removeEventListener(
+        'keydown',
+        handleCompactApexEscape
+      );
+  }, [apexCompactOpen, apexNarrationKey]);
   const [lowCashOpen, setLowCashOpen] = useState(false);
   const [lowCashRows, setLowCashRows] = useState([]);
 
@@ -2688,11 +2749,78 @@ export default function CashbookGrid() {
     return output;
   };
 
-  const sendPendingApprovalToApex = async (item) => {
+  const createCompactApexRow = (item) => {
+    const today = getLocalDateString();
+
+    return {
+      approvalKey: item.approvalKey,
+      code: item.code,
+      branch: item.branch,
+      voucherDate: today,
+      bankAccount: 'CASH A/c.',
+      partyName: '',
+      paymentMode: 'CASH',
+      amount: String(item.amount ?? ''),
+      txnNo: today.replace(/-/g, ''),
+      txnDate: today,
+      narration: COMPACT_APEX_DEFAULT_NARRATION,
+      branchCode: item.code,
+      referenceNo: '',
+      referenceDate: '',
+      salesperson: '',
+      productCategory: '',
+      depositedDate: '',
+      payeeName: '',
+    };
+  };
+
+  const openCompactApexForItem = (item) => {
     if (!item?.approvalKey) return;
 
+    setApexCompactRows((current) => {
+      const exists = current.some(
+        (row) => row.approvalKey === item.approvalKey
+      );
+
+      return exists
+        ? current
+        : [...current, createCompactApexRow(item)];
+    });
+
+    setApexDownloadStatus('');
+    setPendingApprovalsOpen(false);
+    setApexCompactOpen(true);
+  };
+
+  const updateCompactApexRow = (approvalKey, field, value) => {
+    setApexCompactRows((current) =>
+      current.map((row) =>
+        row.approvalKey === approvalKey
+          ? { ...row, [field]: value }
+          : row
+      )
+    );
+
+    setApexDownloadStatus('');
+  };
+
+  const removeCompactApexRowOnly = (approvalKey) => {
+    setApexCompactRows((current) =>
+      current.filter(
+        (row) => row.approvalKey !== approvalKey
+      )
+    );
+
+    if (apexNarrationKey === approvalKey) {
+      setApexNarrationKey(null);
+    }
+  };
+
+  const sendPendingApprovalToApex = async (item) => {
+    if (!item?.approvalKey) return false;
+
     if (importedApprovalKeys.has(item.approvalKey)) {
-      return;
+      return true;
     }
 
     const payload = {
@@ -2714,7 +2842,7 @@ export default function CashbookGrid() {
           'APEX Payment connection failed. Supabase bridge table check cheyyandi.',
           true
         );
-        return;
+        return false;
       }
 
       setImportedApprovalKeys((previous) => {
@@ -2726,17 +2854,20 @@ export default function CashbookGrid() {
       notify(
         `${item.code} ₹${formatAmount(item.amount)} APEX Payment ki pampincham.`
       );
+
+      return true;
     } catch (error) {
       console.error('APEX bridge insert error:', error);
       notify(
         'APEX Payment bridge error.',
         true
       );
+      return false;
     }
   };
 
   const removePendingApprovalFromApex = async (item) => {
-    if (!item?.approvalKey) return;
+    if (!item?.approvalKey) return false;
 
     try {
       const { error } = await supabase
@@ -2750,7 +2881,7 @@ export default function CashbookGrid() {
           'APEX Payment remove failed. Supabase delete policy check cheyyandi.',
           true
         );
-        return;
+        return false;
       }
 
       setImportedApprovalKeys((previous) => {
@@ -2759,12 +2890,191 @@ export default function CashbookGrid() {
         return next;
       });
 
+      removeCompactApexRowOnly(item.approvalKey);
+
       notify(
         `${item.code} ₹${formatAmount(item.amount)} APEX Payment nundi remove chestunnam.`
       );
+
+      return true;
     } catch (error) {
       console.error('APEX bridge delete error:', error);
       notify('APEX Payment remove bridge error.', true);
+      return false;
+    }
+  };
+
+  const formatCompactApexDate = (value) => {
+    const textValue = String(value ?? '').trim();
+
+    if (!textValue) return '';
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(textValue)) {
+      return textValue.replace(/-/g, '');
+    }
+
+    return textValue.replace(/\D/g, '');
+  };
+
+  const downloadCompactApexExcel = async () => {
+    if (apexCompactRows.length === 0) {
+      notify(
+        'At least one Pending Approval select cheyyandi.',
+        true
+      );
+      return;
+    }
+
+    const missingParty = apexCompactRows.filter(
+      (row) => String(row.partyName ?? '').trim() === ''
+    );
+
+    if (missingParty.length > 0) {
+      notify(
+        `${missingParty.length} payment row${missingParty.length === 1 ? '' : 's'} ki Party Name enter cheyyandi.`,
+        true
+      );
+      return;
+    }
+
+    const headers = [
+      'Voucher Date',
+      'Bank/Cash Account',
+      'Party Name',
+      'Payment Mode(CASH/CHEQ/RTGS/NEFT/IMPS/INFT)',
+      'Amount',
+      'TXN No(UTR No)',
+      'TXN Date',
+      'Bank Narration',
+      'Branch Short Code',
+      'Reference Document Number(Optional)',
+      'Reference Document Date(Optional)',
+      'Salesperson Name(Optional)',
+      'Product Category(Optional)',
+      'Deposited Date(Optional)',
+      'PAYEE NAME(Optional)',
+    ];
+
+    const sampleRow = Array(15).fill('ABCD1234');
+
+    const dataRows = apexCompactRows.map((row) => [
+      formatCompactApexDate(row.voucherDate),
+      'CASH A/c.',
+      row.partyName,
+      row.paymentMode || 'CASH',
+      row.amount,
+      row.txnNo,
+      formatCompactApexDate(row.txnDate),
+      row.narration,
+      row.branchCode,
+      row.referenceNo,
+      formatCompactApexDate(row.referenceDate),
+      row.salesperson,
+      row.productCategory,
+      formatCompactApexDate(row.depositedDate),
+      row.payeeName,
+    ]);
+
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      headers,
+      sampleRow,
+      ...dataRows,
+    ]);
+
+    worksheet['!cols'] = [
+      { wch: 14 },
+      { wch: 18 },
+      { wch: 30 },
+      { wch: 22 },
+      { wch: 13 },
+      { wch: 15 },
+      { wch: 14 },
+      { wch: 42 },
+      { wch: 17 },
+      { wch: 26 },
+      { wch: 22 },
+      { wch: 23 },
+      { wch: 23 },
+      { wch: 20 },
+      { wch: 22 },
+    ];
+
+    const workbook = XLSX.utils.book_new();
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      worksheet,
+      'APEX PAYMENT'
+    );
+
+    const today =
+      getLocalDateString().replace(/-/g, '');
+
+    XLSX.writeFile(
+      workbook,
+      `APEX PAYMENT ${today}.xlsx`
+    );
+
+    setApexDownloadStatus(
+      'Excel downloaded. Finalising bridge status...'
+    );
+
+    try {
+      const approvalKeys =
+        apexCompactRows
+          .map((row) => row.approvalKey)
+          .filter(Boolean);
+
+      if (approvalKeys.length > 0) {
+        const { error } = await supabase
+          .from('apex_pending_transfers')
+          .update({
+            status: 'imported',
+            imported_at: new Date().toISOString(),
+          })
+          .in('approval_key', approvalKeys)
+          .eq('status', 'pending');
+
+        if (error) {
+          console.error(
+            'APEX compact status update failed:',
+            error
+          );
+
+          setApexDownloadStatus(
+            'Excel downloaded, but Supabase status update failed.'
+          );
+
+          notify(
+            'Excel downloaded. Bridge status update failed.',
+            true
+          );
+
+          return;
+        }
+      }
+
+      setApexDownloadStatus(
+        '✅ Excel downloaded and bridge updated.'
+      );
+
+      notify(
+        `${apexCompactRows.length} APEX payment row${apexCompactRows.length === 1 ? '' : 's'} Excel lo ready.`
+      );
+    } catch (error) {
+      console.error(
+        'APEX compact status update error:',
+        error
+      );
+
+      setApexDownloadStatus(
+        'Excel downloaded, but Supabase status update failed.'
+      );
+
+      notify(
+        'Excel downloaded. Bridge status update failed.',
+        true
+      );
     }
   };
 
@@ -5600,25 +5910,603 @@ export default function CashbookGrid() {
         </div>
       )}
 
-      {/* PENDING APPROVALS MODAL */}
+      {/* COMPACT APEX PAYMENT WINDOW */}
 
-      {pendingApprovalsOpen && (
+      {apexCompactOpen && (
         <div style={modalOverlayStyle}>
-          <div style={simpleListModalStyle}>
+          <div
+            style={{
+              width: 'min(1460px, 98vw)',
+              maxHeight: '90vh',
+              background: '#ffffff',
+              borderRadius: '7px',
+              border: '1px solid #b9c5cf',
+              boxShadow: '0 14px 45px rgba(0,0,0,0.28)',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
             <div style={modalHeaderStyle}>
-              <strong style={{ color: '#263746', fontSize: '13px' }}>
-                📌 Pending Approvals List
-              </strong>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                <strong style={{ color: '#263746', fontSize: '14px' }}>
+                  ⚡ Compact APEX Bulk Payment
+                </strong>
+                <span
+                  style={{
+                    background: '#e8f5e9',
+                    color: '#137333',
+                    border: '1px solid #b7dfb9',
+                    borderRadius: '12px',
+                    padding: '3px 8px',
+                    fontSize: '10px',
+                    fontWeight: 800,
+                  }}
+                >
+                  {apexCompactRows.length} Selected
+                </span>
+              </div>
+
               <button
                 type="button"
-                onClick={() => setPendingApprovalsOpen(false)}
+                onClick={() => {
+                  setApexNarrationKey(null);
+                  setApexCompactOpen(false);
+                }}
                 style={closeButtonStyle}
               >
                 ×
               </button>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '5px 8px', borderBottom: '1px solid #d9e1e8' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px',
+                padding: '7px 9px',
+                borderBottom: '1px solid #d9e1e8',
+                background: '#f8fafc',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '10px',
+                  color: '#5f6f7d',
+                  fontWeight: 600,
+                }}
+              >
+                Branch / Amount are locked from Pending Approvals. Fill Party Name and remaining payment details here.
+              </div>
+
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setApexNarrationKey(null);
+                    setApexCompactOpen(false);
+                    setPendingApprovalsOpen(true);
+                  }}
+                  style={financeCloseActionStyle}
+                >
+                  ➕ Add More
+                </button>
+
+                <button
+                  type="button"
+                  onClick={downloadCompactApexExcel}
+                  style={financeActionButtonStyle('#16803c')}
+                  disabled={apexCompactRows.length === 0}
+                >
+                  ⬇ Download APEX Excel
+                </button>
+              </div>
+            </div>
+
+            {apexDownloadStatus && (
+              <div
+                style={{
+                  padding: '5px 9px',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  color: apexDownloadStatus.startsWith('✅')
+                    ? '#15803d'
+                    : '#475569',
+                  background: '#fcfdff',
+                  borderBottom: '1px solid #edf1f5',
+                }}
+              >
+                {apexDownloadStatus}
+              </div>
+            )}
+
+            <div
+              style={{
+                overflow: 'auto',
+                padding: '0 8px 8px',
+              }}
+            >
+              <table
+                style={{
+                  width: '100%',
+                  minWidth: '1280px',
+                  borderCollapse: 'collapse',
+                  fontSize: '10px',
+                  color: '#263746',
+                }}
+              >
+                <thead>
+                  <tr>
+                    {[
+                      'Store',
+                      'Amount',
+                      'Party Name',
+                      'Mode',
+                      'TXN No',
+                      'TXN Date',
+                      'Bank Narration',
+                      'Ref Doc No',
+                      'Ref Doc Date',
+                      'Salesperson',
+                      'Product Category',
+                      'Deposited Date',
+                      'Payee Name',
+                      'Remove',
+                    ].map((header) => (
+                      <th
+                        key={header}
+                        style={{
+                          position: 'sticky',
+                          top: 0,
+                          zIndex: 3,
+                          padding: '6px 5px',
+                          border: '1px solid #cbd5df',
+                          background: '#eaf1f6',
+                          color: '#243746',
+                          fontWeight: 800,
+                          whiteSpace: 'nowrap',
+                          textAlign:
+                            header === 'Amount'
+                              ? 'right'
+                              : 'left',
+                        }}
+                      >
+                        {header}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {apexCompactRows.map((row) => (
+                    <tr key={row.approvalKey}>
+                      <td
+                        style={{
+                          padding: '5px',
+                          border: '1px solid #d7e0e8',
+                          whiteSpace: 'nowrap',
+                          fontWeight: 800,
+                          color: '#034b8f',
+                        }}
+                      >
+                        {row.code} — {row.branch}
+                      </td>
+
+                      <td
+                        style={{
+                          padding: '5px',
+                          border: '1px solid #d7e0e8',
+                          whiteSpace: 'nowrap',
+                          textAlign: 'right',
+                          fontWeight: 800,
+                          color: '#0066a6',
+                        }}
+                      >
+                        ₹{formatAmount(Number(row.amount))}
+                      </td>
+
+                      <td style={{ padding: '4px', border: '1px solid #d7e0e8' }}>
+                        <input
+                          list="compact-apex-party-list"
+                          value={row.partyName}
+                          onChange={(event) =>
+                            updateCompactApexRow(
+                              row.approvalKey,
+                              'partyName',
+                              event.target.value
+                            )
+                          }
+                          placeholder="Party Name"
+                          style={{
+                            width: '210px',
+                            height: '27px',
+                            boxSizing: 'border-box',
+                            border: '1px solid #b7c4cf',
+                            borderRadius: '3px',
+                            padding: '4px 6px',
+                            fontSize: '10px',
+                          }}
+                        />
+                      </td>
+
+                      <td style={{ padding: '4px', border: '1px solid #d7e0e8' }}>
+                        <select
+                          value={row.paymentMode}
+                          onChange={(event) =>
+                            updateCompactApexRow(
+                              row.approvalKey,
+                              'paymentMode',
+                              event.target.value
+                            )
+                          }
+                          style={{
+                            width: '90px',
+                            height: '27px',
+                            border: '1px solid #b7c4cf',
+                            borderRadius: '3px',
+                            fontSize: '10px',
+                          }}
+                        >
+                          {COMPACT_APEX_PAYMENT_MODES.map((mode) => (
+                            <option key={mode} value={mode}>
+                              {mode}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+
+                      <td style={{ padding: '4px', border: '1px solid #d7e0e8' }}>
+                        <input
+                          value={row.txnNo}
+                          onChange={(event) =>
+                            updateCompactApexRow(
+                              row.approvalKey,
+                              'txnNo',
+                              event.target.value
+                            )
+                          }
+                          style={{
+                            width: '100px',
+                            height: '27px',
+                            boxSizing: 'border-box',
+                            border: '1px solid #b7c4cf',
+                            borderRadius: '3px',
+                            padding: '4px 6px',
+                            fontSize: '10px',
+                          }}
+                        />
+                      </td>
+
+                      <td style={{ padding: '4px', border: '1px solid #d7e0e8' }}>
+                        <input
+                          type="date"
+                          value={row.txnDate}
+                          onChange={(event) =>
+                            updateCompactApexRow(
+                              row.approvalKey,
+                              'txnDate',
+                              event.target.value
+                            )
+                          }
+                          style={{
+                            width: '125px',
+                            height: '27px',
+                            boxSizing: 'border-box',
+                            border: '1px solid #b7c4cf',
+                            borderRadius: '3px',
+                            fontSize: '10px',
+                          }}
+                        />
+                      </td>
+
+                      <td
+                        style={{
+                          padding: '4px',
+                          border: '1px solid #d7e0e8',
+                          minWidth: '220px',
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setApexNarrationKey(
+                              row.approvalKey
+                            )
+                          }
+                          title="Click to edit Bank Narration"
+                          style={{
+                            width: '100%',
+                            minWidth: '220px',
+                            height: '27px',
+                            padding: '4px 7px',
+                            border: '1px solid #b7c4cf',
+                            borderRadius: '3px',
+                            background: '#ffffff',
+                            color: '#263746',
+                            textAlign: 'left',
+                            fontSize: '10px',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {row.narration ||
+                            'Click to enter Bank Narration'}
+                        </button>
+                      </td>
+
+                      {[
+                        ['referenceNo', 'Ref Doc No', '135px'],
+                        ['referenceDate', 'Ref Doc Date', '125px'],
+                        ['salesperson', 'Salesperson', '130px'],
+                        ['productCategory', 'Product Category', '135px'],
+                        ['depositedDate', 'Deposited Date', '125px'],
+                        ['payeeName', 'Payee Name', '130px'],
+                      ].map(([field, placeholder, width]) => (
+                        <td
+                          key={field}
+                          style={{
+                            padding: '4px',
+                            border: '1px solid #d7e0e8',
+                          }}
+                        >
+                          {field === 'referenceDate' ||
+                          field === 'depositedDate' ? (
+                            <input
+                              type="date"
+                              value={row[field]}
+                              onChange={(event) =>
+                                updateCompactApexRow(
+                                  row.approvalKey,
+                                  field,
+                                  event.target.value
+                                )
+                              }
+                              style={{
+                                width,
+                                height: '27px',
+                                boxSizing: 'border-box',
+                                border: '1px solid #b7c4cf',
+                                borderRadius: '3px',
+                                fontSize: '10px',
+                              }}
+                            />
+                          ) : (
+                            <input
+                              value={row[field]}
+                              onChange={(event) =>
+                                updateCompactApexRow(
+                                  row.approvalKey,
+                                  field,
+                                  event.target.value
+                                )
+                              }
+                              placeholder={placeholder}
+                              style={{
+                                width,
+                                height: '27px',
+                                boxSizing: 'border-box',
+                                border: '1px solid #b7c4cf',
+                                borderRadius: '3px',
+                                padding: '4px 6px',
+                                fontSize: '10px',
+                              }}
+                            />
+                          )}
+                        </td>
+                      ))}
+
+                      <td
+                        style={{
+                          padding: '4px',
+                          border: '1px solid #d7e0e8',
+                          textAlign: 'center',
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            removePendingApprovalFromApex({
+                              approvalKey:
+                                row.approvalKey,
+                              code: row.code,
+                              branch: row.branch,
+                              amount: row.amount,
+                            })
+                          }
+                          style={financeActionButtonStyle('#b91c1c')}
+                        >
+                          ×
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+
+                  {apexCompactRows.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={14}
+                        style={{
+                          padding: '20px',
+                          textAlign: 'center',
+                          color: '#64748b',
+                          fontWeight: 700,
+                        }}
+                      >
+                        No Pending Approval payments selected.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+
+              <datalist id="compact-apex-party-list">
+                {COMPACT_APEX_PARTIES.map((party) => (
+                  <option
+                    key={party}
+                    value={party}
+                  />
+                ))}
+              </datalist>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BANK NARRATION EDITOR */}
+
+      {apexNarrationKey !== null && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 4000,
+            background: 'rgba(24, 36, 48, 0.50)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '28px',
+          }}
+        >
+          <div
+            style={{
+              width: 'min(900px, 94vw)',
+              height: 'min(520px, 72vh)',
+              background: '#ffffff',
+              borderRadius: '8px',
+              border: '1px solid #b9c5cf',
+              boxShadow: '0 18px 55px rgba(0,0,0,0.30)',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <div style={modalHeaderStyle}>
+              <div>
+                <strong
+                  style={{
+                    color: '#263746',
+                    fontSize: '14px',
+                  }}
+                >
+                  Bank Narration
+                </strong>
+                <div
+                  style={{
+                    fontSize: '10px',
+                    color: '#718096',
+                    marginTop: '2px',
+                  }}
+                >
+                  Click to edit Bank Narration
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setApexNarrationKey(null)
+                }
+                style={closeButtonStyle}
+              >
+                ×
+              </button>
+            </div>
+
+            <div
+              style={{
+                flex: 1,
+                padding: '12px',
+                display: 'flex',
+                minHeight: 0,
+              }}
+            >
+              <textarea
+                autoFocus
+                value={
+                  apexCompactRows.find(
+                    (row) =>
+                      row.approvalKey ===
+                      apexNarrationKey
+                  )?.narration || ''
+                }
+                onChange={(event) =>
+                  updateCompactApexRow(
+                    apexNarrationKey,
+                    'narration',
+                    event.target.value
+                  )
+                }
+                placeholder="Enter full Bank Narration..."
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  resize: 'none',
+                  boxSizing: 'border-box',
+                  border: '1px solid #cfd8e3',
+                  borderRadius: '6px',
+                  padding: '12px',
+                  fontSize: '13px',
+                  lineHeight: 1.55,
+                  color: '#16324f',
+                  fontFamily: 'inherit',
+                  outline: 'none',
+                }}
+              />
+            </div>
+
+            <div
+              style={{
+                padding: '7px 12px',
+                borderTop: '1px solid #e1e7ef',
+                background: '#f7fafc',
+                fontSize: '10px',
+                color: '#64748b',
+                textAlign: 'right',
+              }}
+            >
+              Press Esc or click × to close
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PENDING APPROVALS MODAL */}
+
+      {pendingApprovalsOpen && (
+        <div style={modalOverlayStyle}>
+          <div style={simpleListModalStyle}>
+            <div style={modalHeaderStyle}>
+              <strong
+                style={{
+                  color: '#263746',
+                  fontSize: '13px',
+                }}
+              >
+                📌 Pending Approvals List
+              </strong>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setPendingApprovalsOpen(false)
+                }
+                style={closeButtonStyle}
+              >
+                ×
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                padding: '5px 8px',
+                borderBottom: '1px solid #d9e1e8',
+              }}
+            >
               <button
                 type="button"
                 onClick={() =>
@@ -5636,59 +6524,119 @@ export default function CashbookGrid() {
             </div>
 
             <div style={reportListStyle}>
-              {buildPendingApprovalList().map((item, index) => (
-                <div
-                  key={`${item.code}-${index}`}
-                  style={{
-                    ...reportListRowStyle,
-                    gridTemplateColumns: '72px 1fr 105px',
-                    alignItems: 'center',
-                  }}
-                >
-                  <div style={reportCodeStyle}>
-                    {item.code}
-                  </div>
+              {buildPendingApprovalList().map(
+                (item, index) => {
+                  const isSelected =
+                    importedApprovalKeys.has(
+                      item.approvalKey
+                    );
 
-                  <div style={reportBranchStyle}>
-                    {item.branch}
-                  </div>
-
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '9px',
-                      fontWeight: 700,
-                      color: '#0066b3',
-                    }}
-                  >
-                    <span>
-                      ₹{formatAmount(item.amount)}
-                    </span>
-
-                    <input
-                      type="checkbox"
-                      checked={importedApprovalKeys.has(item.approvalKey)}
-                      onChange={(event) => {
-                        if (event.target.checked) {
-                          sendPendingApprovalToApex(item);
-                        } else {
-                          removePendingApprovalFromApex(item);
-                        }
-                      }}
-                      aria-label={`${importedApprovalKeys.has(item.approvalKey) ? 'Remove' : 'Send'} ${item.branch} ₹${formatAmount(item.amount)} ${importedApprovalKeys.has(item.approvalKey) ? 'from' : 'to'} APEX Payment`}
+                  return (
+                    <div
+                      key={`${item.code}-${index}`}
                       style={{
-                        width: '17px',
-                        height: '17px',
-                        margin: 0,
-                        cursor: 'pointer',
-                        accentColor: '#15803d',
+                        ...reportListRowStyle,
+                        gridTemplateColumns:
+                          '72px 1fr 165px',
+                        alignItems: 'center',
                       }}
-                    />
-                  </div>
-                </div>
-              ))}
+                    >
+                      <div style={reportCodeStyle}>
+                        {item.code}
+                      </div>
+
+                      <div style={reportBranchStyle}>
+                        {item.branch}
+                      </div>
+
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'flex-end',
+                          gap: '8px',
+                          fontWeight: 700,
+                          color: '#0066b3',
+                        }}
+                      >
+                        <span>
+                          ₹{formatAmount(item.amount)}
+                        </span>
+
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={async (event) => {
+                            if (
+                              event.target.checked
+                            ) {
+                              const ok =
+                                await sendPendingApprovalToApex(
+                                  item
+                                );
+
+                              if (ok) {
+                                openCompactApexForItem(
+                                  item
+                                );
+                              }
+                            } else {
+                              await removePendingApprovalFromApex(
+                                item
+                              );
+                            }
+                          }}
+                          aria-label={`${
+                            isSelected
+                              ? 'Remove'
+                              : 'Send'
+                          } ${item.branch} ₹${formatAmount(
+                            item.amount
+                          )} ${
+                            isSelected
+                              ? 'from'
+                              : 'to'
+                          } APEX Payment`}
+                          style={{
+                            width: '17px',
+                            height: '17px',
+                            margin: 0,
+                            cursor: 'pointer',
+                            accentColor:
+                              '#15803d',
+                          }}
+                        />
+
+                        {isSelected && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openCompactApexForItem(
+                                item
+                              )
+                            }
+                            style={{
+                              border:
+                                '1px solid #2563eb',
+                              borderRadius: '4px',
+                              padding: '4px 7px',
+                              background:
+                                '#eff6ff',
+                              color: '#1d4ed8',
+                              fontSize: '10px',
+                              fontWeight: 800,
+                              cursor:
+                                'pointer',
+                            }}
+                          >
+                            ✎ APEX
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+              )}
             </div>
           </div>
         </div>
