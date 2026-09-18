@@ -3684,23 +3684,42 @@ export default function CashbookGrid() {
       {}
     );
 
+    const exportAmountValue = (raw) => {
+      const value = String(raw ?? '').trim();
+
+      if (value === '') {
+        return '';
+      }
+
+      // IMPORTANT: The website can calculate expressions even when the user
+      // enters them without a leading "=" (for example: 672+300+1000).
+      // For the downloaded Master Cashbook, export the evaluated numeric
+      // result so Excel shows the final amount instead of the raw expression.
+      if (/^[0-9.+\-*/()\s]+$/.test(value)) {
+        return calculateAmount(value);
+      }
+
+      const parsed = parseAmountNumber(value);
+      return parsed !== null ? parsed : raw;
+    };
+
     const data = [
       headers,
       ...exportRows.map((row) => [
         row.slNo,
         row.code,
         row.branch,
-        row.opening,
-        row.deposit,
-        row.denomination,
-        row.addings,
-        row.pendingApprovals,
-        row.finance,
-        row.sr,
-        row.sweeperSalary,
-        row.edits,
-        row.apxShortage,
-        row.kspApprovals,
+        exportAmountValue(row.opening),
+        exportAmountValue(row.deposit),
+        exportAmountValue(row.denomination),
+        exportAmountValue(row.addings),
+        exportAmountValue(row.pendingApprovals),
+        exportAmountValue(row.finance),
+        exportAmountValue(row.sr),
+        exportAmountValue(row.sweeperSalary),
+        exportAmountValue(row.edits),
+        exportAmountValue(row.apxShortage),
+        exportAmountValue(row.kspApprovals),
         calculateClosing(row),
         row.remarks,
       ]),
@@ -3736,7 +3755,9 @@ export default function CashbookGrid() {
       { wch: 32 },
     ];
 
-    // Preserve formula cells as actual Excel formulas.
+    // Force all amount cells to the evaluated numeric value in the
+    // downloaded workbook. This prevents expressions such as
+    // 672+300+1000 from being exported as plain text.
     for (
       let rowIndex = 0;
       rowIndex < rowsRef.current.length;
@@ -3746,37 +3767,26 @@ export default function CashbookGrid() {
       const dataRow = rowIndex + 2;
 
       NUMBER_FIELDS.forEach((field, fieldIndex) => {
-        const colIndex =
-          3 + fieldIndex; // D is index 3
+        const colIndex = 3 + fieldIndex;
+        const address = XLSX.utils.encode_cell({
+          r: dataRow - 1,
+          c: colIndex,
+        });
+        const value = exportAmountValue(row[field]);
 
-        const address =
-          XLSX.utils.encode_cell({
-            r: dataRow - 1,
-            c: colIndex,
-          });
-
-        const converted = toExcelValue(
-          row[field]
-        );
-
-        if (
-          converted &&
-          typeof converted === 'object' &&
-          converted.formula
-        ) {
-          worksheet[address] = {
-            t: 'n',
-            f: converted.formula,
-            v: converted.result,
-          };
+        if (value === '') {
+          worksheet[address] = { t: 's', v: '' };
+        } else if (typeof value === 'number' && Number.isFinite(value)) {
+          worksheet[address] = { t: 'n', v: value };
+        } else {
+          worksheet[address] = { t: 's', v: String(value) };
         }
       });
 
-      const closingAddress =
-        XLSX.utils.encode_cell({
-          r: dataRow - 1,
-          c: 14,
-        });
+      const closingAddress = XLSX.utils.encode_cell({
+        r: dataRow - 1,
+        c: 14,
+      });
 
       worksheet[closingAddress] = {
         t: 'n',
