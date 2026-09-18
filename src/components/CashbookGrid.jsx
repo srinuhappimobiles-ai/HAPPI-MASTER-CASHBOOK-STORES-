@@ -2827,26 +2827,61 @@ export default function CashbookGrid() {
      PENDING STATUS
   ----------------------------------------- */
 
+  /* -----------------------------------------
+     PENDING STATUS — FINAL RULES
+
+     Rule 1:
+       Deposit = BLANK (not 0)
+       Denomination = BLANK (not 0)
+       -> Cashbook Pending + Deposit Pending
+
+     Rule 2:
+       Deposit = BLANK (not 0)
+       Denomination > 0
+       -> Deposit Pending
+
+     Rule 3:
+       Deposit > 0
+       -> No Pending
+
+     Rule 4:
+       Denomination = 0 (explicit zero, NOT blank)
+       -> No Pending
+
+     IMPORTANT:
+       BLANK and 0 are intentionally different.
+  ----------------------------------------- */
+
+  const isBlankValue = (value) =>
+    String(value ?? '').trim() === '';
+
   const isPositiveAmount = (value) =>
     calculateAmount(value) > 0;
 
-  const isEmptyOrZeroAmount = (value) =>
-    String(value ?? '').trim() === '' ||
+  const isExplicitZero = (value) =>
+    !isBlankValue(value) &&
     calculateAmount(value) === 0;
 
   const getPendingCashbooks = () =>
-    rowsRef.current.filter(
-      (row) =>
-        isEmptyOrZeroAmount(row.denomination) &&
-        isEmptyOrZeroAmount(row.deposit)
-    );
+    rowsRef.current.filter((row) => {
+      const depositBlank = isBlankValue(row.deposit);
+      const denominationBlank = isBlankValue(row.denomination);
+
+      // Rule 1 only: BOTH fields must be genuinely blank.
+      // Explicit 0 is NOT treated as blank.
+      return depositBlank && denominationBlank;
+    });
 
   const getPendingDepositSlips = () =>
-    rowsRef.current.filter(
-      (row) =>
-        isPositiveAmount(row.denomination) &&
-        isEmptyOrZeroAmount(row.deposit)
-    );
+    rowsRef.current.filter((row) => {
+      const depositBlank = isBlankValue(row.deposit);
+      const denominationBlank = isBlankValue(row.denomination);
+      const denominationPositive = isPositiveAmount(row.denomination);
+
+      // Rule 2 only: Deposit must be blank and Denomination > 0.
+      // Denomination = 0 (explicit zero) is never a pending deposit slip.
+      return depositBlank && !denominationBlank && denominationPositive;
+    });
 
   /* -----------------------------------------
      LOW / NO CASH
