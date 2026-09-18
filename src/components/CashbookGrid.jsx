@@ -5267,6 +5267,20 @@ export default function CashbookGrid() {
         ? rows.slice(54)
         : rows;
 
+  // GRAND TOTAL: total every numeric head for the rows currently shown.
+  // Formula-style values such as =600+6000 are included using calculateAmount().
+  // Closing Balance is intentionally not totaled/shown.
+  const grandTotals = NUMBER_FIELDS.reduce(
+    (totals, field) => {
+      totals[field] = visibleRows.reduce(
+        (sum, row) => sum + calculateAmount(row[field]),
+        0
+      );
+      return totals;
+    },
+    {}
+  );
+
   /* -----------------------------------------
      LOADING SCREEN
   ----------------------------------------- */
@@ -5859,6 +5873,65 @@ export default function CashbookGrid() {
                 );
               }
             )}
+
+            <tr
+              className="grand-total-row"
+              style={{
+                position: 'sticky',
+                bottom: 0,
+                zIndex: 5,
+                background: '#dbe8f3',
+                boxShadow: '0 -2px 5px rgba(0,0,0,0.10)',
+              }}
+            >
+              <td
+                colSpan={3}
+                style={{
+                  padding: '7px 8px',
+                  textAlign: 'left',
+                  fontWeight: 900,
+                  color: '#17324d',
+                  borderTop: '2px solid #5b7ea1',
+                  background: '#dbe8f3',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                GRAND TOTAL
+              </td>
+
+              {NUMBER_FIELDS.map((field) => (
+                <td
+                  key={`grand-total-${field}`}
+                  style={{
+                    padding: '7px 6px',
+                    textAlign: 'right',
+                    fontWeight: 900,
+                    color: '#17324d',
+                    borderTop: '2px solid #5b7ea1',
+                    background: '#dbe8f3',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {formatAmount(grandTotals[field])}
+                </td>
+              ))}
+
+              {/* Closing Balance intentionally left blank. */}
+              <td
+                style={{
+                  borderTop: '2px solid #5b7ea1',
+                  background: '#dbe8f3',
+                }}
+              />
+
+              {/* Remarks intentionally left blank. */}
+              <td
+                style={{
+                  borderTop: '2px solid #5b7ea1',
+                  background: '#dbe8f3',
+                }}
+              />
+            </tr>
 
           </tbody>
 
