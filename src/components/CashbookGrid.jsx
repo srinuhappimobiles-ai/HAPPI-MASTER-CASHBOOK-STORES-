@@ -6566,22 +6566,21 @@ export default function CashbookGrid() {
                         <input
                           type="checkbox"
                           checked={isSelected}
-                          onChange={async (event) => {
+                          onChange={(event) => {
                             if (
                               event.target.checked
                             ) {
-                              const ok =
-                                await sendPendingApprovalToApex(
-                                  item
-                                );
+                              // Open the Compact APEX window FIRST.
+                              // Do not wait for the Supabase network request.
+                              // The bridge insert continues in the background.
+                              openCompactApexForItem(item);
 
-                              if (ok) {
-                                openCompactApexForItem(
-                                  item
-                                );
-                              }
+                              void sendPendingApprovalToApex(
+                                item
+                              );
                             } else {
-                              await removePendingApprovalFromApex(
+                              // Remove from the bridge in the background.
+                              void removePendingApprovalFromApex(
                                 item
                               );
                             }
