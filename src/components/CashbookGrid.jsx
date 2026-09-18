@@ -37,7 +37,7 @@ const LOW_CASH_STORAGE_KEY = 'happi_low_cash_report_v1';
 
 // Cloud sync runs only once every 10 minutes.
 // LocalStorage is updated immediately, so typing/editing never waits for Supabase.
-const AUTO_SYNC_INTERVAL = 10 * 60 * 1000;
+const AUTO_SYNC_INTERVAL = 2 * 60 * 1000;
 
 const HEADERS = [
   'SL.No.',
