@@ -2880,6 +2880,7 @@ export default function CashbookGrid() {
           row = {
             ...row,
             txnNo: String(value ?? '').replace(/-/g, ''),
+            txnDate: value,
             referenceDate: value,
             depositedDate: value,
           };
