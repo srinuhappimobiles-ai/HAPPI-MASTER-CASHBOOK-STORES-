@@ -3729,12 +3729,334 @@ export default function CashbookGrid() {
     });
   };
 
+  /* -----------------------------------------
+     CASHBOOK CELL CLIPBOARD
+
+     Excel-like clipboard support for numeric cashbook
+     cells:
+       Ctrl+C = Copy the stored/raw cell value
+       Ctrl+X = Cut the stored/raw cell value
+       Ctrl+V = Paste into the cell
+
+     Existing edit behaviour is preserved:
+       - Existing value: F2 / double-click to edit
+       - Blank value: direct typing still works
+       - Arrow keys still navigate when not editing
+  ----------------------------------------- */
+
+  const getClipboardCellText = (value) => {
+    const text = String(value ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+    // A single cashbook cell should receive only the first pasted cell.
+    // This also makes copying a single cell from Excel/Sheets work cleanly.
+    const firstLine = text.split('\n')[0] ?? '';
+    const firstCell = firstLine.split('\t')[0] ?? '';
+
+    return firstCell;
+  };
+
+  const writeTextToClipboard = async (text) => {
+    if (
+      navigator.clipboard &&
+      typeof navigator.clipboard.writeText === 'function'
+    ) {
+      await navigator.clipboard.writeText(String(text ?? ''));
+      return true;
+    }
+
+    // Fallback for browsers/environments where Clipboard API is unavailable.
+    const textarea = document.createElement('textarea');
+
+    textarea.value = String(text ?? '');
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '0';
+    textarea.style.opacity = '0';
+
+    document.body.appendChild(textarea);
+
+    try {
+      textarea.select();
+
+      const copied = document.execCommand('copy');
+
+      if (!copied) {
+        throw new Error('Fallback clipboard copy failed');
+      }
+
+      return true;
+    } finally {
+      document.body.removeChild(textarea);
+    }
+  };
+
+  const readTextFromClipboard = async () => {
+    if (
+      navigator.clipboard &&
+      typeof navigator.clipboard.readText === 'function'
+    ) {
+      return navigator.clipboard.readText();
+    }
+
+    throw new Error('Clipboard read is unavailable in this browser.');
+  };
+
+  const applyClipboardValueToNumberCell = (
+    rowIndex,
+    field,
+    pastedValue
+  ) => {
+    const input =
+      rowRefs.current[rowIndex]?.querySelector(
+        `input[data-field="${field}"][data-number-field="true"]`
+      );
+
+    if (!input) return;
+
+    const rawValue = getClipboardCellText(pastedValue);
+
+    const beforeRow =
+      rowsRef.current[rowIndex];
+
+    if (beforeRow) {
+      pushHistorySnapshot({
+        type: 'row',
+        rowIndex,
+        row: beforeRow,
+      });
+    }
+
+    input.readOnly = true;
+    input.dataset.rawValue = rawValue;
+    input.value = getDisplayInputValue(rawValue);
+
+    editingCellRef.current = null;
+
+    updateClosingBalance(rowIndex);
+    markRowDirty(rowIndex);
+
+    requestAnimationFrame(() => {
+      input.focus();
+    });
+  };
+
+  const cutNumberCellValue = async (
+    input,
+    rowIndex,
+    field
+  ) => {
+    const rawValue =
+      getStoredInputValue(input);
+
+    if (rawValue === '') {
+      return;
+    }
+
+    try {
+      const copied =
+        await writeTextToClipboard(rawValue);
+
+      if (!copied) return;
+
+      clearNumberCell(
+        { preventDefault: () => {}, currentTarget: input },
+        rowIndex,
+        field
+      );
+    } catch (error) {
+      console.warn(
+        'Cashbook cell cut failed:',
+        error
+      );
+
+      setClipboardNotice(
+        'Cell cut was not available. Please try again.'
+      );
+    }
+  };
+
+  const handleNumberCopy = (event) => {
+    const input =
+      event.currentTarget;
+
+    const rawValue =
+      getStoredInputValue(input);
+
+    // Keep browser/default copy behaviour while actively editing,
+    // so the user's selected text is copied normally.
+    if (!input.readOnly) {
+      return;
+    }
+
+    event.preventDefault();
+
+    try {
+      if (event.clipboardData) {
+        event.clipboardData.setData(
+          'text/plain',
+          rawValue
+        );
+      } else {
+        void writeTextToClipboard(rawValue);
+      }
+    } catch (error) {
+      console.warn(
+        'Cashbook cell copy failed:',
+        error
+      );
+    }
+  };
+
+  const handleNumberCut = (event, rowIndex, field) => {
+    const input =
+      event.currentTarget;
+
+    // While explicitly editing, keep normal text-input cut behaviour.
+    if (!input.readOnly) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const rawValue =
+      getStoredInputValue(input);
+
+    const clearAfterCopy = () => {
+      clearNumberCell(
+        { preventDefault: () => {}, currentTarget: input },
+        rowIndex,
+        field
+      );
+    };
+
+    try {
+      if (event.clipboardData) {
+        event.clipboardData.setData(
+          'text/plain',
+          rawValue
+        );
+
+        clearAfterCopy();
+      } else {
+        void cutNumberCellValue(
+          input,
+          rowIndex,
+          field
+        );
+      }
+    } catch (error) {
+      console.warn(
+        'Cashbook cell cut failed:',
+        error
+      );
+    }
+  };
+
+  const handleNumberPaste = (
+    event,
+    rowIndex,
+    field
+  ) => {
+    const input =
+      event.currentTarget;
+
+    // While editing, browser paste remains normal text editing.
+    if (!input.readOnly) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const pastedText =
+      event.clipboardData?.getData('text/plain') ?? '';
+
+    applyClipboardValueToNumberCell(
+      rowIndex,
+      field,
+      pastedText
+    );
+  };
+
   const handleNumberKeyDown = (
     event,
     rowIndex,
     field
   ) => {
     const input = event.currentTarget;
+
+    /* -----------------------------------------
+       CTRL+C / CTRL+X / CTRL+V
+       ----------------------------------------- */
+
+    if (
+      event.ctrlKey ||
+      event.metaKey
+    ) {
+      const key = event.key.toLowerCase();
+
+      if (key === 'c' && input.readOnly) {
+        event.preventDefault();
+
+        const rawValue =
+          getStoredInputValue(input);
+
+        try {
+          if (event.clipboardData) {
+            event.clipboardData.setData(
+              'text/plain',
+              rawValue
+            );
+          } else {
+            void writeTextToClipboard(rawValue);
+          }
+        } catch (error) {
+          console.warn(
+            'Cashbook Ctrl+C failed:',
+            error
+          );
+        }
+
+        return;
+      }
+
+      if (key === 'x' && input.readOnly) {
+        event.preventDefault();
+
+        void cutNumberCellValue(
+          input,
+          rowIndex,
+          field
+        );
+
+        return;
+      }
+
+      if (key === 'v' && input.readOnly) {
+        event.preventDefault();
+
+        void readTextFromClipboard()
+          .then((clipboardText) => {
+            applyClipboardValueToNumberCell(
+              rowIndex,
+              field,
+              clipboardText
+            );
+          })
+          .catch((error) => {
+            console.warn(
+              'Cashbook Ctrl+V failed:',
+              error
+            );
+
+            setClipboardNotice(
+              'Paste was not available. Please try again.'
+            );
+          });
+
+        return;
+      }
+    }
 
     // Navigation mode:
     // Arrow keys move between cells only when the cell is NOT being edited.
@@ -5055,6 +5377,21 @@ export default function CashbookGrid() {
                           }
                           onDoubleClick={(event) =>
                             handleNumberDoubleClick(
+                              event,
+                              rowIndex,
+                              field
+                            )
+                          }
+                          onCopy={handleNumberCopy}
+                          onCut={(event) =>
+                            handleNumberCut(
+                              event,
+                              rowIndex,
+                              field
+                            )
+                          }
+                          onPaste={(event) =>
+                            handleNumberPaste(
                               event,
                               rowIndex,
                               field
