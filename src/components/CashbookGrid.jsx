@@ -3669,9 +3669,24 @@ export default function CashbookGrid() {
   const downloadMasterCashbookExcel = () => {
     const headers = [...HEADERS];
 
+    const exportRows = rowsRef.current;
+
+    // Excel GRAND TOTAL uses the same numeric heads as the website.
+    // Closing Balance is intentionally left blank.
+    const exportGrandTotals = NUMBER_FIELDS.reduce(
+      (totals, field) => {
+        totals[field] = exportRows.reduce(
+          (sum, row) => sum + calculateAmount(row[field]),
+          0
+        );
+        return totals;
+      },
+      {}
+    );
+
     const data = [
       headers,
-      ...rowsRef.current.map((row) => [
+      ...exportRows.map((row) => [
         row.slNo,
         row.code,
         row.branch,
@@ -3689,6 +3704,14 @@ export default function CashbookGrid() {
         calculateClosing(row),
         row.remarks,
       ]),
+      [
+        'GRAND TOTAL',
+        '',
+        '',
+        ...NUMBER_FIELDS.map((field) => exportGrandTotals[field]),
+        '',
+        '',
+      ],
     ];
 
     const worksheet =
@@ -3839,6 +3862,40 @@ export default function CashbookGrid() {
           };
         }
       }
+    }
+
+    // Style the Excel GRAND TOTAL row to match the website.
+    const grandTotalRowIndex = exportRows.length + 1;
+    for (let col = 0; col < headers.length; col++) {
+      const address = XLSX.utils.encode_cell({
+        r: grandTotalRowIndex,
+        c: col,
+      });
+
+      if (!worksheet[address]) {
+        worksheet[address] = { t: 's', v: '' };
+      }
+
+      worksheet[address].s = {
+        fill: {
+          patternType: 'solid',
+          fgColor: { rgb: 'DBE8F3' },
+        },
+        font: {
+          bold: true,
+          color: { rgb: '17324D' },
+        },
+        alignment: {
+          vertical: 'center',
+          horizontal: col === 0 ? 'left' : 'right',
+        },
+        border: {
+          top: { style: 'medium', color: { rgb: '5B7EA1' } },
+          bottom: { style: 'thin', color: { rgb: '5B7EA1' } },
+          left: { style: 'thin', color: { rgb: '5B7EA1' } },
+          right: { style: 'thin', color: { rgb: '5B7EA1' } },
+        },
+      };
     }
 
     worksheet['!freeze'] = { xSplit: 3, ySplit: 1 };
