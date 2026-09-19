@@ -4776,27 +4776,23 @@ export default function CashbookGrid() {
       return;
     }
 
-    // IMPORTANT: Do NOT calculate immediately inside blur.
-    // Alt+Tab can cause input blur before the window/visibility blur event
-    // has fully propagated. Deferring the commit by one task lets the
-    // window-blur flag settle first.
+    // IMPORTANT:
+    // A cell blur has two different meanings here:
+    //   1) User moved to another cell inside the website -> COMMIT formula.
+    //   2) User pressed Alt+Tab / switched to another program -> DO NOT COMMIT.
+    //
+    // We wait a little so the browser finishes changing activeElement and
+    // firing the window/visibility focus events. Then document.hasFocus()
+    // tells us whether the user is still inside the website.
     window.setTimeout(() => {
-      // The browser/application is away: this was an Alt+Tab / window blur.
-      // Keep the exact formula text and keep edit mode alive.
-      if (
-        windowFocusLostRef.current ||
+      const appIsAway =
         document.visibilityState === 'hidden' ||
-        !document.hasFocus()
-      ) {
-        return;
-      }
+        !document.hasFocus();
 
-      // If another edit session has already started, this blur belongs to
-      // the previous cell and must not commit it a second time.
-      if (
-        editingCellRef.current !==
-        getEditingKey(rowIndex, field)
-      ) {
+      // Alt+Tab / another program: keep the exact formula text and leave
+      // this cell in edit mode. The focus handler restores it when the user
+      // comes back to the browser.
+      if (appIsAway) {
         return;
       }
 
@@ -4814,17 +4810,28 @@ export default function CashbookGrid() {
             calculateAmount(rawValue);
 
           if (Number.isFinite(calculatedValue)) {
+            // IMPORTANT: show the calculated number when the user leaves
+            // the cell, while keeping the original formula in
+            // data-raw-value for the next F2/double-click edit.
             input.value = String(calculatedValue);
           }
         }
       }
 
       input.readOnly = true;
-      editingCellRef.current = null;
+
+      // Only clear the global edit marker if it still points to this cell.
+      // This prevents an older blur event from cancelling a newer edit.
+      if (
+        editingCellRef.current ===
+        getEditingKey(rowIndex, field)
+      ) {
+        editingCellRef.current = null;
+      }
 
       updateClosingBalance(rowIndex);
       markRowDirty(rowIndex);
-    }, 0);
+    }, 40);
   };
 
   /* -----------------------------------------
