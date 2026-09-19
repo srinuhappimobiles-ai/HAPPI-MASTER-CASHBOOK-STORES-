@@ -1052,6 +1052,11 @@ export default function CashbookGrid() {
   // Tracks which amount cells are currently in F2/double-click edit mode.
   const editingCellRef = useRef(null);
 
+  // IMPORTANT: Alt+Tab / switching away from the browser fires input blur.
+  // This ref lets us distinguish an application/window blur from a real
+  // website cell change, so formula text is not committed while away.
+  const windowFocusLostRef = useRef(false);
+
   const [rows, setRows] = useState([]);
   const [cashierFilter, setCashierFilter] = useState('all');
 
@@ -1108,6 +1113,74 @@ export default function CashbookGrid() {
         handleCompactApexEscape
       );
   }, [apexCompactOpen, apexNarrationKey]);
+
+  useEffect(() => {
+    const restoreActiveNumberEdit = () => {
+      const editingKey = editingCellRef.current;
+
+      if (!editingKey) {
+        return;
+      }
+
+      const separatorIndex = editingKey.indexOf(':');
+
+      if (separatorIndex < 0) {
+        return;
+      }
+
+      const rowIndex = Number(editingKey.slice(0, separatorIndex));
+      const field = editingKey.slice(separatorIndex + 1);
+
+      if (!Number.isInteger(rowIndex) || !field) {
+        return;
+      }
+
+      const input =
+        rowRefs.current[rowIndex]?.querySelector(
+          `input[data-number-field="true"][data-field="${field}"]`
+        );
+
+      if (!input) {
+        return;
+      }
+
+      // Never replace the user's edit-session raw text with the
+      // calculated/display value merely because the browser window became
+      // active again.
+      const rawValue = input.dataset.rawValue ?? input.value ?? '';
+      input.value = rawValue;
+      input.readOnly = false;
+    };
+
+    const handleWindowBlur = () => {
+      windowFocusLostRef.current = true;
+    };
+
+    const handleWindowFocus = () => {
+      windowFocusLostRef.current = false;
+      requestAnimationFrame(restoreActiveNumberEdit);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        windowFocusLostRef.current = true;
+      } else {
+        windowFocusLostRef.current = false;
+        requestAnimationFrame(restoreActiveNumberEdit);
+      }
+    };
+
+    window.addEventListener('blur', handleWindowBlur, true);
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('blur', handleWindowBlur, true);
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
   const [lowCashOpen, setLowCashOpen] = useState(false);
   const [lowCashRows, setLowCashRows] = useState([]);
 
@@ -4695,7 +4768,7 @@ export default function CashbookGrid() {
     markRowDirty(rowIndex);
   };
 
-  const handleNumberBlur = (event, rowIndex) => {
+  const handleNumberBlur = (event, rowIndex, field) => {
     const input = event.currentTarget;
 
     // If it was never explicitly edited, leave it untouched.
@@ -4703,30 +4776,55 @@ export default function CashbookGrid() {
       return;
     }
 
-    const rawValue = input.value.trim();
+    // IMPORTANT: Do NOT calculate immediately inside blur.
+    // Alt+Tab can cause input blur before the window/visibility blur event
+    // has fully propagated. Deferring the commit by one task lets the
+    // window-blur flag settle first.
+    window.setTimeout(() => {
+      // The browser/application is away: this was an Alt+Tab / window blur.
+      // Keep the exact formula text and keep edit mode alive.
+      if (
+        windowFocusLostRef.current ||
+        document.visibilityState === 'hidden' ||
+        !document.hasFocus()
+      ) {
+        return;
+      }
 
-    input.dataset.rawValue = rawValue;
+      // If another edit session has already started, this blur belongs to
+      // the previous cell and must not commit it a second time.
+      if (
+        editingCellRef.current !==
+        getEditingKey(rowIndex, field)
+      ) {
+        return;
+      }
 
-    if (rawValue !== '') {
-      const isExpression =
-        rawValue.startsWith('=') ||
-        /[+\-*/()]/.test(rawValue);
+      const rawValue = input.value.trim();
 
-      if (isExpression) {
-        const calculatedValue =
-          calculateAmount(rawValue);
+      input.dataset.rawValue = rawValue;
 
-        if (Number.isFinite(calculatedValue)) {
-          input.value = String(calculatedValue);
+      if (rawValue !== '') {
+        const isExpression =
+          rawValue.startsWith('=') ||
+          /[+\-*/()]/.test(rawValue);
+
+        if (isExpression) {
+          const calculatedValue =
+            calculateAmount(rawValue);
+
+          if (Number.isFinite(calculatedValue)) {
+            input.value = String(calculatedValue);
+          }
         }
       }
-    }
 
-    input.readOnly = true;
-    editingCellRef.current = null;
+      input.readOnly = true;
+      editingCellRef.current = null;
 
-    updateClosingBalance(rowIndex);
-    markRowDirty(rowIndex);
+      updateClosingBalance(rowIndex);
+      markRowDirty(rowIndex);
+    }, 0);
   };
 
   /* -----------------------------------------
@@ -5894,7 +5992,8 @@ export default function CashbookGrid() {
                           onBlur={(event) =>
                             handleNumberBlur(
                               event,
-                              rowIndex
+                              rowIndex,
+                              field
                             )
                           }
                         />
